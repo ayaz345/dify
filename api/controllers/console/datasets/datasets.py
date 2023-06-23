@@ -279,8 +279,7 @@ class DatasetRelatedAppListApi(Resource):
 
         related_apps = []
         for app_dataset_join in app_dataset_joins:
-            app_model = app_dataset_join.app
-            if app_model:
+            if app_model := app_dataset_join.app:
                 related_apps.append(app_model)
 
         return {
@@ -328,10 +327,7 @@ class DatasetIndexingStatusApi(Resource):
             document.completed_segments = completed_segments
             document.total_segments = total_segments
             documents_status.append(marshal(document, self.document_status_fields))
-        data = {
-            'data': documents_status
-        }
-        return data
+        return {'data': documents_status}
 
 
 api.add_resource(DatasetListApi, '/datasets')

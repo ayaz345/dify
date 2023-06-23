@@ -47,13 +47,13 @@ class DatasetService:
 
     @staticmethod
     def get_process_rules(dataset_id):
-        # get the latest process rule
-        dataset_process_rule = db.session.query(DatasetProcessRule). \
-            filter(DatasetProcessRule.dataset_id == dataset_id). \
-            order_by(DatasetProcessRule.created_at.desc()). \
-            limit(1). \
-            one_or_none()
-        if dataset_process_rule:
+        if (
+            dataset_process_rule := db.session.query(DatasetProcessRule)
+            .filter(DatasetProcessRule.dataset_id == dataset_id)
+            .order_by(DatasetProcessRule.created_at.desc())
+            .limit(1)
+            .one_or_none()
+        ):
             mode = dataset_process_rule.mode
             rules = dataset_process_rule.rules_dict
         else:
@@ -92,10 +92,7 @@ class DatasetService:
         dataset = Dataset.query.filter_by(
             id=dataset_id
         ).first()
-        if dataset is None:
-            return None
-        else:
-            return dataset
+        return None if dataset is None else dataset
 
     @staticmethod
     def update_dataset(dataset_id, data, user):
@@ -272,52 +269,48 @@ class DocumentService:
 
     @staticmethod
     def get_document(dataset_id: str, document_id: str) -> Optional[Document]:
-        document = db.session.query(Document).filter(
-            Document.id == document_id,
-            Document.dataset_id == dataset_id
-        ).first()
-
-        return document
+        return (
+            db.session.query(Document)
+            .filter(Document.id == document_id, Document.dataset_id == dataset_id)
+            .first()
+        )
 
     @staticmethod
     def get_document_by_id(document_id: str) -> Optional[Document]:
-        document = db.session.query(Document).filter(
-            Document.id == document_id
-        ).first()
-
-        return document
+        return (
+            db.session.query(Document).filter(Document.id == document_id).first()
+        )
 
     @staticmethod
     def get_document_by_dataset_id(dataset_id: str) -> List[Document]:
-        documents = db.session.query(Document).filter(
-            Document.dataset_id == dataset_id,
-            Document.enabled == True
-        ).all()
-
-        return documents
+        return (
+            db.session.query(Document)
+            .filter(Document.dataset_id == dataset_id, Document.enabled == True)
+            .all()
+        )
 
     @staticmethod
     def get_batch_documents(dataset_id: str, batch: str) -> List[Document]:
-        documents = db.session.query(Document).filter(
-            Document.batch == batch,
-            Document.dataset_id == dataset_id,
-            Document.tenant_id == current_user.current_tenant_id
-        ).all()
-
-        return documents
+        return (
+            db.session.query(Document)
+            .filter(
+                Document.batch == batch,
+                Document.dataset_id == dataset_id,
+                Document.tenant_id == current_user.current_tenant_id,
+            )
+            .all()
+        )
     @staticmethod
     def get_document_file_detail(file_id: str):
-        file_detail = db.session.query(UploadFile). \
-            filter(UploadFile.id == file_id). \
-            one_or_none()
-        return file_detail
+        return (
+            db.session.query(UploadFile)
+            .filter(UploadFile.id == file_id)
+            .one_or_none()
+        )
 
     @staticmethod
     def check_archived(document):
-        if document.archived:
-            return True
-        else:
-            return False
+        return bool(document.archived)
 
     @staticmethod
     def delete_document(document):
@@ -342,7 +335,7 @@ class DocumentService:
         db.session.add(document)
         db.session.commit()
         # set document paused flag
-        indexing_cache_key = 'document_{}_is_paused'.format(document.id)
+        indexing_cache_key = f'document_{document.id}_is_paused'
         redis_client.setnx(indexing_cache_key, "True")
 
     @staticmethod
@@ -357,15 +350,18 @@ class DocumentService:
         db.session.add(document)
         db.session.commit()
         # delete paused flag
-        indexing_cache_key = 'document_{}_is_paused'.format(document.id)
+        indexing_cache_key = f'document_{document.id}_is_paused'
         redis_client.delete(indexing_cache_key)
         # trigger async task
         document_indexing_task.delay(document.dataset_id, document.id)
 
     @staticmethod
     def get_documents_position(dataset_id):
-        document = Document.query.filter_by(dataset_id=dataset_id).order_by(Document.position.desc()).first()
-        if document:
+        if (
+            document := Document.query.filter_by(dataset_id=dataset_id)
+            .order_by(Document.position.desc())
+            .first()
+        ):
             return document.position + 1
         else:
             return 1
@@ -381,7 +377,7 @@ class DocumentService:
 
         if not dataset.indexing_technique:
             if 'indexing_technique' not in document_data \
-                    or document_data['indexing_technique'] not in Dataset.INDEXING_TECHNIQUE_LIST:
+                        or document_data['indexing_technique'] not in Dataset.INDEXING_TECHNIQUE_LIST:
                 raise ValueError("Indexing technique is required")
 
             dataset.indexing_technique = document_data["indexing_technique"]
@@ -443,7 +439,7 @@ class DocumentService:
             elif document_data["data_source"]["type"] == "notion_import":
                 notion_info_list = document_data["data_source"]['info_list']['notion_info_list']
                 exist_page_ids = []
-                exist_document = dict()
+                exist_document = {}
                 documents = Document.query.filter_by(
                     dataset_id=dataset.id,
                     tenant_id=current_user.current_tenant_id,
@@ -497,7 +493,7 @@ class DocumentService:
                         else:
                             exist_document.pop(page['page_id'])
                 # delete not selected documents
-                if len(exist_document) > 0:
+                if exist_document:
                     clean_notion_document_task.delay(list(exist_document.values()), dataset.id)
             db.session.commit()
 
@@ -509,7 +505,7 @@ class DocumentService:
     @staticmethod
     def save_document(dataset: Dataset, process_rule_id: str, data_source_type: str, data_source_info: dict,
                       created_from: str, position: int, account: Account, name: str, batch: str):
-        document = Document(
+        return Document(
             tenant_id=dataset.tenant_id,
             dataset_id=dataset.id,
             position=position,
@@ -521,7 +517,6 @@ class DocumentService:
             created_from=created_from,
             created_by=account.id,
         )
-        return document
 
     @staticmethod
     def update_document_with_dataset_id(dataset: Dataset, document_data: dict,
@@ -634,8 +629,8 @@ class DocumentService:
 
         cut_length = 18
         cut_name = documents[0].name[:cut_length]
-        dataset.name = cut_name + '...'
-        dataset.description = 'useful for when you want to answer queries about the ' + documents[0].name
+        dataset.name = f'{cut_name}...'
+        dataset.description = f'useful for when you want to answer queries about the {documents[0].name}'
         db.session.commit()
 
         return dataset, documents, batch
@@ -646,14 +641,17 @@ class DocumentService:
             DocumentService.data_source_args_validate(args)
             DocumentService.process_rule_args_validate(args)
         else:
-            if ('data_source' not in args and not args['data_source'])\
-                    and ('process_rule' not in args and not args['process_rule']):
+            if (
+                'data_source' not in args
+                and not args['data_source']
+                and 'process_rule' not in args
+                and not args['process_rule']
+            ):
                 raise ValueError("Data source or Process rule is required")
-            else:
-                if 'data_source' in args and args['data_source']:
-                    DocumentService.data_source_args_validate(args)
-                if 'process_rule' in args and args['process_rule']:
-                    DocumentService.process_rule_args_validate(args)
+            if 'data_source' in args and args['data_source']:
+                DocumentService.data_source_args_validate(args)
+            if 'process_rule' in args and args['process_rule']:
+                DocumentService.process_rule_args_validate(args)
 
     @classmethod
     def data_source_args_validate(cls, args: dict):

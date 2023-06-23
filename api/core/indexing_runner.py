@@ -146,12 +146,10 @@ class IndexingRunner:
                         DocumentRelationship.SOURCE: document_segment.document_id,
                     }
 
-                    previous_segment = document_segment.previous_segment
-                    if previous_segment:
+                    if previous_segment := document_segment.previous_segment:
                         relationships[DocumentRelationship.PREVIOUS] = previous_segment.index_node_id
 
-                    next_segment = document_segment.next_segment
-                    if next_segment:
+                    if next_segment := document_segment.next_segment:
                         relationships[DocumentRelationship.NEXT] = next_segment.index_node_id
                     node = Node(
                         doc_id=document_segment.index_node_id,
@@ -280,13 +278,13 @@ class IndexingRunner:
                 raise ValueError("no upload file found")
 
             file_detail = db.session.query(UploadFile). \
-                filter(UploadFile.id == data_source_info['upload_file_id']). \
-                one_or_none()
+                    filter(UploadFile.id == data_source_info['upload_file_id']). \
+                    one_or_none()
 
             text_docs = self._load_data_from_file(file_detail)
         elif document.data_source_type == 'notion_import':
             if not data_source_info or 'notion_page_id' not in data_source_info \
-                    or 'notion_workspace_id' not in data_source_info:
+                        or 'notion_workspace_id' not in data_source_info:
                 raise ValueError("no notion page found")
             workspace_id = data_source_info['notion_workspace_id']
             page_id = data_source_info['notion_page_id']
@@ -301,22 +299,24 @@ class IndexingRunner:
             ).first()
             if not data_source_binding:
                 raise ValueError('Data source binding not found.')
-            if page_type == 'page':
-                # add page last_edited_time to data_source_info
-                self._get_notion_page_last_edited_time(page_id, data_source_binding.access_token, document)
-                text_docs = self._load_page_data_from_notion(page_id, data_source_binding.access_token)
-            elif page_type == 'database':
+            if page_type == 'database':
                 # add page last_edited_time to data_source_info
                 self._get_notion_database_last_edited_time(page_id, data_source_binding.access_token, document)
                 text_docs = self._load_database_data_from_notion(page_id, data_source_binding.access_token)
+            elif page_type == 'page':
+                # add page last_edited_time to data_source_info
+                self._get_notion_page_last_edited_time(page_id, data_source_binding.access_token, document)
+                text_docs = self._load_page_data_from_notion(page_id, data_source_binding.access_token)
         # update document status to splitting
         self._update_document_index_status(
             document_id=document.id,
             after_indexing_status="splitting",
             extra_update_params={
-                Document.word_count: sum([len(text_doc.text) for text_doc in text_docs]),
-                Document.parsing_completed_at: datetime.datetime.utcnow()
-            }
+                Document.word_count: sum(
+                    len(text_doc.text) for text_doc in text_docs
+                ),
+                Document.parsing_completed_at: datetime.datetime.utcnow(),
+            },
         )
 
         # replace doc id to document model id
@@ -346,20 +346,16 @@ class IndexingRunner:
             file_extractor[".xlsx"] = XLSXParser()
 
             loader = SimpleDirectoryReader(input_files=[filepath], file_extractor=file_extractor)
-            text_docs = loader.load_data()
-
-            return text_docs
+            return loader.load_data()
 
     def _load_page_data_from_notion(self, page_id: str, access_token: str) -> List[Document]:
         page_ids = [page_id]
         reader = NotionPageReader(integration_token=access_token)
-        text_docs = reader.load_data_as_documents(page_ids=page_ids)
-        return text_docs
+        return reader.load_data_as_documents(page_ids=page_ids)
 
     def _load_database_data_from_notion(self, database_id: str, access_token: str) -> List[Document]:
         reader = NotionPageReader(integration_token=access_token)
-        text_docs = reader.load_data_as_documents(database_id=database_id)
-        return text_docs
+        return reader.load_data_as_documents(database_id=database_id)
 
     def _get_notion_page_last_edited_time(self, page_id: str, access_token: str, document: Document):
         reader = NotionPageReader(integration_token=access_token)
@@ -559,9 +555,8 @@ class IndexingRunner:
         )
 
     def _check_document_paused_status(self, document_id: str):
-        indexing_cache_key = 'document_{}_is_paused'.format(document_id)
-        result = redis_client.get(indexing_cache_key)
-        if result:
+        indexing_cache_key = f'document_{document_id}_is_paused'
+        if result := redis_client.get(indexing_cache_key):
             raise DocumentIsPausedException()
 
     def _update_document_index_status(self, document_id: str, after_indexing_status: str,
@@ -578,7 +573,7 @@ class IndexingRunner:
         }
 
         if extra_update_params:
-            update_params.update(extra_update_params)
+            update_params |= extra_update_params
 
         Document.query.filter_by(id=document_id).update(update_params)
         db.session.commit()

@@ -117,12 +117,10 @@ class DocumentResource(Resource):
         except services.errors.account.NoPermissionError as e:
             raise Forbidden(str(e))
 
-        documents = DocumentService.get_batch_documents(dataset_id, batch)
-
-        if not documents:
+        if documents := DocumentService.get_batch_documents(dataset_id, batch):
+            return documents
+        else:
             raise NotFound('Documents not found.')
-
-        return documents
 
 
 class GetProcessRuleApi(Resource):
@@ -132,8 +130,7 @@ class GetProcessRuleApi(Resource):
     def get(self):
         req_data = request.args
 
-        document_id = req_data.get('document_id')
-        if document_id:
+        if document_id := req_data.get('document_id'):
             # get the latest process rule
             document = Document.query.get_or_404(document_id)
 
@@ -149,10 +146,10 @@ class GetProcessRuleApi(Resource):
 
             # get the latest process rule
             dataset_process_rule = db.session.query(DatasetProcessRule). \
-                filter(DatasetProcessRule.dataset_id == document.dataset_id). \
-                order_by(DatasetProcessRule.created_at.desc()). \
-                limit(1). \
-                one_or_none()
+                    filter(DatasetProcessRule.dataset_id == document.dataset_id). \
+                    order_by(DatasetProcessRule.created_at.desc()). \
+                    limit(1). \
+                    one_or_none()
             mode = dataset_process_rule.mode
             rules = dataset_process_rule.rules_dict
         else:
@@ -186,7 +183,8 @@ class DatasetDocumentListApi(Resource):
             raise Forbidden(str(e))
 
         query = Document.query.filter_by(
-            dataset_id=str(dataset_id), tenant_id=current_user.current_tenant_id)
+            dataset_id=dataset_id, tenant_id=current_user.current_tenant_id
+        )
 
         if search:
             search = f'%{search}%'
@@ -201,11 +199,11 @@ class DatasetDocumentListApi(Resource):
         if sort == 'hit_count':
             sub_query = db.select(DocumentSegment.document_id,
                                   db.func.sum(DocumentSegment.hit_count).label("total_hit_count")) \
-                .group_by(DocumentSegment.document_id) \
-                .subquery()
+                    .group_by(DocumentSegment.document_id) \
+                    .subquery()
 
             query = query.outerjoin(sub_query, sub_query.c.document_id == Document.id) \
-                .order_by(sort_logic(db.func.coalesce(sub_query.c.total_hit_count, 0)))
+                    .order_by(sort_logic(db.func.coalesce(sub_query.c.total_hit_count, 0)))
         elif sort == 'created_at':
             query = query.order_by(sort_logic(Document.created_at))
         else:
@@ -226,15 +224,13 @@ class DatasetDocumentListApi(Resource):
             data = marshal(documents, document_with_segments_fields)
         else:
             data = marshal(documents, document_fields)
-        response = {
+        return {
             'data': data,
             'has_more': len(documents) == limit,
             'limit': limit,
             'total': paginated_documents.total,
-            'page': page
+            'page': page,
         }
-
-        return response
 
     documents_and_batch_fields = {
         'documents': fields.List(fields.Nested(document_fields)),
@@ -331,13 +327,7 @@ class DatasetInitApi(Resource):
         except ModelCurrentlyNotSupportError:
             raise ProviderModelCurrentlyNotSupportError()
 
-        response = {
-            'dataset': dataset,
-            'documents': documents,
-            'batch': batch
-        }
-
-        return response
+        return {'dataset': dataset, 'documents': documents, 'batch': batch}
 
 
 class DocumentIndexingEstimateApi(DocumentResource):
@@ -412,24 +402,24 @@ class DocumentBatchIndexingEstimateApi(DocumentResource):
         for document in documents:
             if document.indexing_status in ['completed', 'error']:
                 raise DocumentAlreadyFinishedError()
-            data_source_info = document.data_source_info_dict
-            # format document files info
-            if data_source_info and 'upload_file_id' in data_source_info:
-                file_id = data_source_info['upload_file_id']
-                info_list.append(file_id)
-            # format document notion info
-            elif data_source_info and 'notion_workspace_id' in data_source_info and 'notion_page_id' in data_source_info:
-                pages = []
-                page = {
-                    'page_id': data_source_info['notion_page_id'],
-                    'type': data_source_info['type']
-                }
-                pages.append(page)
-                notion_info = {
-                    'workspace_id': data_source_info['notion_workspace_id'],
-                    'pages': pages
-                }
-                info_list.append(notion_info)
+            if data_source_info := document.data_source_info_dict:
+                if 'upload_file_id' in data_source_info:
+                    file_id = data_source_info['upload_file_id']
+                    info_list.append(file_id)
+                elif (
+                    'notion_workspace_id' in data_source_info
+                    and 'notion_page_id' in data_source_info
+                ):
+                    page = {
+                        'page_id': data_source_info['notion_page_id'],
+                        'type': data_source_info['type']
+                    }
+                    pages = [page]
+                    notion_info = {
+                        'workspace_id': data_source_info['notion_workspace_id'],
+                        'pages': pages
+                    }
+                    info_list.append(notion_info)
 
         if dataset.data_source_type == 'upload_file':
             file_details = db.session.query(UploadFile).filter(
@@ -489,10 +479,7 @@ class DocumentBatchIndexingStatusApi(DocumentResource):
             document.completed_segments = completed_segments
             document.total_segments = total_segments
             documents_status.append(marshal(document, self.document_status_fields))
-        data = {
-            'data': documents_status
-        }
-        return data
+        return {'data': documents_status}
 
 
 class DocumentIndexingStatusApi(DocumentResource):
@@ -519,15 +506,15 @@ class DocumentIndexingStatusApi(DocumentResource):
         document_id = str(document_id)
         document = self.get_document(dataset_id, document_id)
 
-        completed_segments = DocumentSegment.query \
-            .filter(DocumentSegment.completed_at.isnot(None),
-                    DocumentSegment.document_id == str(document_id),
-                    DocumentSegment.status != 're_segment') \
-            .count()
-        total_segments = DocumentSegment.query \
-            .filter(DocumentSegment.document_id == str(document_id),
-                    DocumentSegment.status != 're_segment') \
-            .count()
+        completed_segments = DocumentSegment.query.filter(
+            DocumentSegment.completed_at.isnot(None),
+            DocumentSegment.document_id == document_id,
+            DocumentSegment.status != 're_segment',
+        ).count()
+        total_segments = DocumentSegment.query.filter(
+            DocumentSegment.document_id == document_id,
+            DocumentSegment.status != 're_segment',
+        ).count()
 
         document.completed_segments = completed_segments
         document.total_segments = total_segments
@@ -729,7 +716,7 @@ class DocumentStatusApi(DocumentResource):
         if current_user.current_tenant.current_role not in ['admin', 'owner']:
             raise Forbidden()
 
-        indexing_cache_key = 'document_{}_indexing'.format(document.id)
+        indexing_cache_key = f'document_{document.id}_indexing'
         cache_result = redis_client.get(indexing_cache_key)
         if cache_result is not None:
             raise InvalidActionError("Document is being indexed, please try again later")

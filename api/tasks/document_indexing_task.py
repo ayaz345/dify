@@ -23,7 +23,7 @@ def document_indexing_task(dataset_id: str, document_ids: list):
     """
     documents = []
     for document_id in document_ids:
-        logging.info(click.style('Start process document: {}'.format(document_id), fg='green'))
+        logging.info(click.style(f'Start process document: {document_id}', fg='green'))
         start_at = time.perf_counter()
 
         document = db.session.query(Document).filter(
@@ -44,9 +44,18 @@ def document_indexing_task(dataset_id: str, document_ids: list):
         indexing_runner = IndexingRunner()
         indexing_runner.run(documents)
         end_at = time.perf_counter()
-        logging.info(click.style('Processed document: {} latency: {}'.format(document.id, end_at - start_at), fg='green'))
+        logging.info(
+            click.style(
+                f'Processed document: {document.id} latency: {end_at - start_at}',
+                fg='green',
+            )
+        )
     except DocumentIsPausedException:
-        logging.info(click.style('Document paused, document id: {}'.format(document.id), fg='yellow'))
+        logging.info(
+            click.style(
+                f'Document paused, document id: {document.id}', fg='yellow'
+            )
+        )
     except ProviderTokenNotInitError as e:
         document.indexing_status = 'error'
         document.error = str(e.description)
